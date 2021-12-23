@@ -15,7 +15,11 @@ public class TypeChecker extends Visitor<Void> {
 
     @Override
     public Void visit(Program program) {
-        //Todo
+        for (StructDeclaration structDeclaration: program.getStructs())
+            structDeclaration.accept(this);
+        for (FunctionDeclaration functionDeclaration:program.getFunctions())
+            functionDeclaration.accept(this);
+        program.getMain().accept(this);
         return null;
     }
 
