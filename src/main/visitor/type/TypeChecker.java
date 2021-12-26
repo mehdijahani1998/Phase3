@@ -24,10 +24,16 @@ import main.visitor.Visitor;
 
 
 public class TypeChecker extends Visitor<Void> {
+    private boolean checkMain;
+    private boolean checkGetter;
+    private Type globalGetterType;
+    private boolean checkSetter;
+
     ExpressionTypeChecker expressionTypeChecker;
     private FunctionSymbolTableItem currentFunction;
     private StructSymbolTableItem currentStruct;
-    private boolean checkMain;
+
+
 
     private FunctionSymbolTableItem findFSTI(String function_name) {
         try{
@@ -62,6 +68,22 @@ public class TypeChecker extends Visitor<Void> {
 
     @Override
     public Void visit(FunctionDeclaration functionDec) {
+        Type funcRetType = functionDec.getReturnType();
+
+        //check the case in which return object is a struct
+
+        if(funcRetType instanceof StructType) {
+            String stName = StructSymbolTableItem.START_KEY + ((StructType) funcRetType).getStructName().getName();
+
+            try{
+                SymbolTable.root.getItem(stName);
+            }
+            catch (ItemNotFoundException e){
+                StructNotDeclared error = new StructNotDeclared(functionDec.getLine(), ((StructType) funcRetType).getStructName().getName());
+                functionDec.addError(error);
+            }
+        }
+
 
         currentFunction = findFSTI(functionDec.getFunctionName().getName());
         SymbolTable funcSymbolTable = new SymbolTable(SymbolTable.root);
@@ -73,12 +95,16 @@ public class TypeChecker extends Visitor<Void> {
         }
         functionDec.getBody().accept(this);
         SymbolTable.pop();
+        currentFunction = null;
+        expressionTypeChecker.setCurrentFunction(currentFunction);
         return null;
     }
 
     @Override
     public Void visit(MainDeclaration mainDec) {
+        checkMain = true;
         mainDec.getBody().accept(this);
+        checkMain = false;
         return null;
     }
 
@@ -92,7 +118,10 @@ public class TypeChecker extends Visitor<Void> {
     public Void visit(StructDeclaration structDec) {
         currentStruct = findSSTI(structDec.getStructName().getName());
         expressionTypeChecker.setCurrentStruct(currentStruct);
+        SymbolTable.push(currentStruct.getStructSymbolTable());
         structDec.getBody().accept(this);
+        SymbolTable.pop();
+        expressionTypeChecker.setCurrentStruct(currentStruct);
         return null;
     }
 
@@ -118,7 +147,7 @@ public class TypeChecker extends Visitor<Void> {
         boolean lNT = lxpt instanceof NoType;
         boolean rNT = rxpt instanceof NoType;
 
-
+        //check unsuitable type for left hand side of the assignment statement
         if(SA || LAbI || ID){
             //check unhandled types for lxp and rxp.
             if(!expressionTypeChecker.checkSpecialTypeEquality(lxpt,rxpt) && !lNT && !rNT){
@@ -152,8 +181,10 @@ public class TypeChecker extends Visitor<Void> {
             conditionalStmt.addError(error);
         }
 
+        //visit then body
         conditionalStmt.getThenBody().accept(this);
 
+        //visit else body
         if(conditionalStmt.getElseBody() != null) {
             conditionalStmt.getElseBody().accept(this);
         }
@@ -172,6 +203,7 @@ public class TypeChecker extends Visitor<Void> {
     public Void visit(DisplayStmt displayStmt) {
         Type argType =  displayStmt.getArg().accept(expressionTypeChecker);
 
+        //check valid types.
         if(argType instanceof BoolType || argType instanceof IntType) {
             return null;
         }
@@ -198,6 +230,20 @@ public class TypeChecker extends Visitor<Void> {
             CannotUseReturn error = new CannotUseReturn(returnStmt.getLine());
             returnStmt.addError(error);
         }
+
+        //check the case in which we are in a getter scope
+        if (checkGetter) {
+            if (!expressionTypeChecker.checkSpecialTypeEquality(globalGetterType, returnType)) {
+                ReturnValueNotMatchFunctionReturnType error = new ReturnValueNotMatchFunctionReturnType(returnStmt.getLine());
+                returnStmt.addError(error);
+            }
+        }
+
+        //check the case in which we are in a setter scope
+        if (checkSetter){
+            CannotUseReturn exception = new CannotUseReturn(returnStmt.getLine());
+            returnStmt.addError(exception);
+        }
         return null;
     }
 
@@ -205,6 +251,7 @@ public class TypeChecker extends Visitor<Void> {
     public Void visit(LoopStmt loopStmt) {
         Type conditionType = loopStmt.getCondition().accept(expressionTypeChecker);
 
+        //check unhandled types.
         if(!(conditionType instanceof BoolType || conditionType instanceof NoType)) {
             ConditionNotBool exception = new ConditionNotBool(loopStmt.getLine());
             loopStmt.addError(exception);
