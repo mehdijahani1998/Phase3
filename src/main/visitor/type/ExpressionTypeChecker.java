@@ -38,13 +38,6 @@ public class ExpressionTypeChecker extends Visitor<Type> {
         this.currentStruct = cs;
     }
 
-    private FunctionSymbolTableItem searchFSTI (String function_name){
-        try{
-            return (FunctionSymbolTableItem) SymbolTable.root.getItem(FunctionSymbolTableItem.START_KEY + function_name);
-        }catch (ItemNotFoundException e){
-            return null;
-        }
-    }
 
     public void setfCallStmt(boolean fCallStmt) {
         this.fCallStmt = fCallStmt;
@@ -55,46 +48,70 @@ public class ExpressionTypeChecker extends Visitor<Type> {
         //check NoType equality
         if(t1 instanceof NoType || t2 instanceof NoType) return true;
 
+
+
+            //check Int, Bool, Void equality
+            boolean it1 = t1 instanceof IntType;
+            boolean bt1 = t1 instanceof BoolType;
+            boolean vt1 = t1 instanceof VoidType;
+
+            boolean it2 = t2 instanceof IntType;
+            boolean bt2 = t2 instanceof BoolType;
+            boolean vt2 = t2 instanceof VoidType;
+
+            boolean lt1 = t1 instanceof ListType;
+            boolean lt2 = t2 instanceof ListType;
+
+            boolean ft1 = t1 instanceof FptrType;
+            boolean ft2 = t2 instanceof FptrType;
+
+            boolean st1 = t1 instanceof StructType;
+            boolean st2 = t2 instanceof StructType;
+
         //check Int, Bool, Void equality
-        if(t1.equals(t2)){
-            if(t1 instanceof IntType || t1 instanceof BoolType || t1 instanceof VoidType){
+
+            if(vt1 && vt2){
                 return true;
             }
+        if(it1 && it2){
+            return true;
+        }
+        if(bt1 && bt2){
+            return true;
         }
 
-        //check List equality
-        if(t1 instanceof ListType && t2 instanceof ListType){
-            return checkSpecialTypeEquality(((ListType) t1).getType(),((ListType) t2).getType());
-        }
+            //check List equality
+            if(lt1 && lt2){
+                return checkSpecialTypeEquality(((ListType) t1).getType(),((ListType) t2).getType());
+            }
 
+            //check Fptr equality
+            if(ft1 && ft2){
+                FptrType f1 = (FptrType) t1;
+                FptrType f2 = (FptrType) t2;
+                if (!checkSpecialTypeEquality(f1.getReturnType(), f2.getReturnType()))
+                    return false; //functions return type should be equal.
 
-        //check Fptr equality
-        if (t1 instanceof FptrType && t2 instanceof FptrType) {
-            FptrType f1 = (FptrType) t1;
-            FptrType f2 = (FptrType) t2;
-            if (!checkSpecialTypeEquality(f1.getReturnType(), f2.getReturnType()))
-                return false; //functions return type should be equal.
+                //if return type was the same we have to check each argument
 
-            //if return type was the same we have to check each argument
+                ArrayList<Type> f1Arguments = f1.getArgsType();
+                ArrayList<Type> f2Arguments = f1.getArgsType();
 
-            ArrayList<Type> f1Arguments = f1.getArgsType();
-            ArrayList<Type> f2Arguments = f1.getArgsType();
-
-            if (f1Arguments.size() == f2Arguments.size()) {
-                for (int index = 0; index < f1Arguments.size(); index++) {
-                    if (!checkSpecialTypeEquality((f1Arguments.get(index)), f2Arguments.get(index))) return false;
+                if (f1Arguments.size() != f2Arguments.size()) return false;
+                    for (int index = 0; index < f1Arguments.size(); index++) {
+                        if (!checkSpecialTypeEquality((f1Arguments.get(index)), f2Arguments.get(index))) return false;
                 }
                 return true;
+            }
+
+            //check Struct equality
+            if (st1 && st2){
+                return (((StructType) t1).getStructName().equals(((StructType) t2).getStructName()));
             }
             return false;
         }
 
-        //check Struct equality
-        if(t1 instanceof StructType && t2 instanceof  StructType){
-            return (((StructType) t1).getStructName().equals(((StructType) t2).getStructName()));
-        }
-        return false;
-    }
+
 
     @Override
     public Type visit(BinaryExpression binaryExpression) {
@@ -204,8 +221,8 @@ public class ExpressionTypeChecker extends Visitor<Type> {
             } else {
                 ArrayList<Type> callArgTypes = new ArrayList<>();
                 for (Expression expression : funcCall.getArgs()) {
-                    Type t = expression.accept(this);
-                    callArgTypes.add(t);
+                    Type expt = expression.accept(this);
+                    callArgTypes.add(expt);
                 }
 
                 //check if each argument in function call matches its equivalent in original definition.
@@ -273,22 +290,28 @@ public class ExpressionTypeChecker extends Visitor<Type> {
         Type indexType = listAccessByIndex.getIndex().accept(this);
 
         //check unhandled types that aren't NoType neither List Type
-        if(!(indexType instanceof IntType || indexType instanceof NoType)){
+        boolean it = indexType instanceof IntType;
+        boolean nt = indexType instanceof NoType;
+
+        boolean ins_nt = instanceType instanceof  NoType;
+        boolean ins_lt = instanceType instanceof ListType;
+
+        if(!(nt || it)){
             ListIndexNotInt error = new ListIndexNotInt(listAccessByIndex.getLine());
             listAccessByIndex.addError(error);
         }
 
-        if(instanceType instanceof NoType)
+        if(ins_nt)
             return new NoType();
 
-        if(!(instanceType instanceof ListType)){
+        if(!ins_lt){
             AccessByIndexOnNonList error = new AccessByIndexOnNonList(listAccessByIndex.getLine());
             listAccessByIndex.addError(error);
             return new NoType();
         }
 
         else {
-            if (indexType instanceof IntType)
+            if (it)
                 return ((ListType) instanceType).getType();
             else
                 return new NoType();
@@ -299,23 +322,28 @@ public class ExpressionTypeChecker extends Visitor<Type> {
     public Type visit(StructAccess structAccess) {
         Type stInstanceType = structAccess.getInstance().accept(this);
 
-        if(!(stInstanceType instanceof StructType || stInstanceType instanceof NoType)){
+        boolean st_st = stInstanceType instanceof StructType;
+        boolean st_nt = stInstanceType instanceof NoType;
+
+        if(!(st_st || st_nt)){
             AccessOnNonStruct error = new AccessOnNonStruct(structAccess.getLine());
             structAccess.addError(error);
         }
 
-        else if (stInstanceType instanceof StructType){
-            String stName = StructSymbolTableItem.START_KEY + ((StructType) stInstanceType).getStructName().getName();
-            String stVariableName = VariableSymbolTableItem.START_KEY + structAccess.getElement().getName();
+        else if (st_st){
+            String stName = ((StructType) stInstanceType).getStructName().getName();
+            String fullstName = StructSymbolTableItem.START_KEY + stName;
+            String stVariableName = structAccess.getElement().getName();
+            String fullstVariableName = VariableSymbolTableItem.START_KEY + stVariableName;
 
             try {
-                SymbolTableItem symbolTableItem = SymbolTable.root.getItem(stName);
+                SymbolTableItem symbolTableItem = SymbolTable.root.getItem(fullstName);
                 SymbolTable symbolTable = ((StructSymbolTableItem) symbolTableItem).getStructSymbolTable();
-                SymbolTableItem elItem = symbolTable.getItem(stVariableName);
+                SymbolTableItem elItem = symbolTable.getItem(fullstVariableName);
                 return ((VariableSymbolTableItem) elItem).getType();
 
             } catch (ItemNotFoundException e) {
-                StructMemberNotFound error = new StructMemberNotFound(structAccess.getLine(), ((StructType) stInstanceType).getStructName().getName(), structAccess.getElement().getName());
+                StructMemberNotFound error = new StructMemberNotFound(structAccess.getLine(), stName, stVariableName);
                 structAccess.addError(error);
             }
         }
@@ -343,6 +371,11 @@ public class ExpressionTypeChecker extends Visitor<Type> {
 
         Type argType = listAppend.getListArg().accept(this);
         Type elType = listAppend.getElementArg().accept(this);
+
+        if (!fCallStmt) {
+            CantUseValueOfVoidFunction error = new CantUseValueOfVoidFunction(listAppend.getLine());
+            listAppend.addError(error);
+        }
 
         if(argType instanceof NoType) return new VoidType();
 
