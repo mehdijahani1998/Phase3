@@ -22,6 +22,7 @@ public class IntValue extends Value {
     public String toString() {
         return "IntValue_" + this.constant;
     }
+
     @Override
     public <T> T accept(IVisitor<T> visitor) {
         return visitor.visit(this);

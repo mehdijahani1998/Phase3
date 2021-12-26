@@ -5,6 +5,7 @@ import java.util.*;
 
 //line -> LPAR before arguments
 public class FunctionCall extends Expression {
+
     private Expression instance;
     private ArrayList<Expression> args = new ArrayList<>();
 
@@ -36,9 +37,7 @@ public class FunctionCall extends Expression {
     }
 
     @Override
-    public String toString() {
-        return "FunctionCall";
-    }
+    public String toString() { return "FunctionCall";}
     @Override
     public <T> T accept(IVisitor<T> visitor) {
         return visitor.visit(this);

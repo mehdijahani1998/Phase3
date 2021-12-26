@@ -10,13 +10,37 @@ import main.ast.types.NoType;
 import main.ast.types.Type;
 import main.ast.types.primitives.BoolType;
 import main.ast.types.primitives.IntType;
+import main.compileError.typeError.ArgsInFunctionCallNotMatchDefinition;
 import main.compileError.typeError.UnsupportedOperandType;
+import main.compileError.typeError.VarNotDeclared;
+import main.symbolTable.SymbolTable;
+import main.symbolTable.exceptions.ItemNotFoundException;
+import main.symbolTable.items.FunctionSymbolTableItem;
+import main.symbolTable.items.StructSymbolTableItem;
 import main.visitor.Visitor;
 
 import java.util.ArrayList;
 
 public class ExpressionTypeChecker extends Visitor<Type> {
 
+    private FunctionSymbolTableItem currentFunction;
+    private StructSymbolTableItem currentStruct;
+
+    public void setCurrentFunction(FunctionSymbolTableItem cf){
+        this.currentFunction = cf;
+    }
+
+    public void setCurrentStruct(StructSymbolTableItem cs){
+        this.currentStruct = cs;
+    }
+
+    private FunctionSymbolTableItem searchFSTI (String function_name){
+        try{
+            return (FunctionSymbolTableItem) SymbolTable.root.getItem(FunctionSymbolTableItem.START_KEY + function_name);
+        }catch (ItemNotFoundException e){
+            return null;
+        }
+    }
 
     @Override
     public Type visit(BinaryExpression binaryExpression) {
@@ -64,6 +88,10 @@ public class ExpressionTypeChecker extends Visitor<Type> {
 
         }
 
+        else if (operator.equals(BinaryOperator.gt) || operator.equals(BinaryOperator.lt)){
+            if ()
+        }
+
         UnsupportedOperandType error = new UnsupportedOperandType(lxp.getLine(), operator.name());
         lxp.addError(error);
         return new NoType();
@@ -106,7 +134,46 @@ public class ExpressionTypeChecker extends Visitor<Type> {
         Expression funcexp = funcCall.getInstance();
         ArrayList<Expression> funcargs = funcCall.getArgs();
 
-        //Todo
+        for (Expression argument: funcargs){
+            argument.accept(this);
+        }
+
+        try {
+            SymbolTable.root.getItem((FunctionSymbolTableItem.START_KEY + ((Identifier) funcCall.getInstance()).getName()));
+        } catch (ItemNotFoundException e) {
+            VarNotDeclared error = new VarNotDeclared(funcCall.getLine(), ((Identifier) funcCall.getInstance()).getName());
+            funcCall.addError(error);
+            return new NoType();
+        }
+
+        try {
+            FunctionSymbolTableItem functionSymbolTableItem = (FunctionSymbolTableItem) SymbolTable.root.getItem(
+                    (FunctionSymbolTableItem.START_KEY + ((Identifier) funcCall.getInstance()).getName())
+            );
+
+            ArrayList<Type> original_arguments_type = functionSymbolTableItem.getArgTypes();
+
+            if(original_arguments_type.size()!=funcargs.size()){
+                ArgsInFunctionCallNotMatchDefinition error = new ArgsInFunctionCallNotMatchDefinition(funcCall.getLine());
+                funcCall.addError(error);
+                return new NoType();
+            }
+
+            for (int index = 0; index < original_arguments_type.size(); index++){
+
+                if(!original_arguments_type.get(index).equals(funcargs.get(index))){
+                    ArgsInFunctionCallNotMatchDefinition error = new ArgsInFunctionCallNotMatchDefinition(funcargs.get(index).getLine());
+                    funcCall.addError(error);
+                    return new NoType();
+                }
+            }
+        } catch (ItemNotFoundException e) {
+            return new NoType();
+        }
+
+
+
+
         return null;
     }
 
@@ -125,7 +192,7 @@ public class ExpressionTypeChecker extends Visitor<Type> {
 
     @Override
     public Type visit(StructAccess structAccess) {
-        //Todo
+        Type stInstanceType = structAccess.getInstance().accept(this);
         return null;
     }
 
@@ -143,8 +210,7 @@ public class ExpressionTypeChecker extends Visitor<Type> {
 
     @Override
     public Type visit(ExprInPar exprInPar) {
-        //Todo
-        return null;
+        return exprInPar.getInputs().get(0).accept(this);
     }
 
     @Override
