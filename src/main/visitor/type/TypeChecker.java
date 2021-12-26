@@ -70,10 +70,15 @@ public class TypeChecker extends Visitor<Void> {
     public Void visit(FunctionDeclaration functionDec) {
 
         currentFunction = findFSTI(functionDec.getFunctionName().getName());
-        SymbolTable symbolTable = new SymbolTable(SymbolTable.root);
-        currentFunction.setFunctionSymbolTable(symbolTable);
+        SymbolTable funcSymbolTable = new SymbolTable(SymbolTable.root);
+        currentFunction.setFunctionSymbolTable(funcSymbolTable);
+        SymbolTable.push(funcSymbolTable);
         expressionTypeChecker.setCurrentFunction(currentFunction);
+        for(VariableDeclaration arg: functionDec.getArgs()){
+            arg.accept(this);
+        }
         functionDec.getBody().accept(this);
+        SymbolTable.pop();
         return null;
     }
 
@@ -105,7 +110,32 @@ public class TypeChecker extends Visitor<Void> {
 
     @Override
     public Void visit(AssignmentStmt assignmentStmt) {
-        //Todo
+        //this part is done based on what we did for binaryExpressions in the other part.
+        Expression rxp = assignmentStmt.getRValue();
+        Expression lxp = assignmentStmt.getLValue();
+
+        Type rxpt = rxp.accept(expressionTypeChecker);
+        Type lxpt = lxp.accept(expressionTypeChecker);
+
+        boolean SA = lxp instanceof StructAccess;
+        boolean LAbI = lxp instanceof ListAccessByIndex;
+        boolean ID = lxp instanceof Identifier;
+
+        boolean lNT = lxpt instanceof NoType;
+        boolean rNT = rxpt instanceof NoType;
+
+
+        if(SA || LAbI || ID){
+            //check unhandled types for lxp and rxp.
+            if(!expressionTypeChecker.checkSpecialTypeEquality(lxpt,rxpt) && !lNT && !rNT){
+                UnsupportedOperandType error = new UnsupportedOperandType(lxp.getLine(), BinaryOperator.assign.name());
+                assignmentStmt.addError(error);
+            }
+            else{
+                LeftSideNotLvalue error = new LeftSideNotLvalue(assignmentStmt.getLine());
+                assignmentStmt.addError(error);
+            }
+        }
         return null;
     }
 
