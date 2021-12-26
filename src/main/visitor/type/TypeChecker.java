@@ -47,15 +47,8 @@ public class TypeChecker extends Visitor<Void> {
         }
     }
 
-
-    public void TypeChecker(){
-        this.expressionTypeChecker = new ExpressionTypeChecker();
-    }
-
     @Override
     public Void visit(Program program) {
-
-        program.getMain().accept(this);
 
         for (StructDeclaration structDec: program.getStructs())
             structDec.accept(this);
@@ -63,6 +56,7 @@ public class TypeChecker extends Visitor<Void> {
         for (FunctionDeclaration funcDec: program.getFunctions())
             funcDec.accept(this);
 
+        program.getMain().accept(this);
         return null;
     }
 
@@ -148,7 +142,21 @@ public class TypeChecker extends Visitor<Void> {
 
     @Override
     public Void visit(ConditionalStmt conditionalStmt) {
-        //Todo
+
+        //visiting conditionalStmt and accepting it
+        Type conditionType = conditionalStmt.getCondition().accept(expressionTypeChecker);
+
+        //checking unhandled errors.
+        if(!(conditionType instanceof BoolType || conditionType instanceof NoType)) {
+            ConditionNotBool error = new ConditionNotBool(conditionalStmt.getLine());
+            conditionalStmt.addError(error);
+        }
+
+        conditionalStmt.getThenBody().accept(this);
+
+        if(conditionalStmt.getElseBody() != null) {
+            conditionalStmt.getElseBody().accept(this);
+        }
         return null;
     }
 
