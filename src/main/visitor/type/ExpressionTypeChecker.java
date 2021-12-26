@@ -190,115 +190,78 @@ public class ExpressionTypeChecker extends Visitor<Type> {
 
     @Override
     public Type visit(FunctionCall funcCall) {
-        fCallStmt = false;
-        boolean holdFCall = fCallStmt;
-        Expression fInstance = funcCall.getInstance();
-        String fName = ((Identifier) fInstance).getName();
-        ArrayList<Type> fArgType = new ArrayList<>();
-        Type fT = funcCall.getInstance().accept(this);
-
-        //check and visit function arguments type
-        for (Expression expression : funcCall.getArgs()) {
-            Type type = expression.accept(this);
-            fArgType.add(type);
-        }
-        fCallStmt = holdFCall;
-
-        //check unhandled types which aren't Fptr and NoType
-        if (!(fT instanceof FptrType || fT instanceof NoType)){
-            CallOnNoneFptrType error = new CallOnNoneFptrType(funcCall.getLine());
-            funcCall.addError(error);
-            return new NoType();
-        }
-        //check valid type
-        if (fT instanceof FptrType) {
-
-            boolean errorExists = false;
-            boolean err = false;
-            FunctionSymbolTableItem currFunc = searchFSTI(fName);
-            assert currFunc != null;
+        Expression instance = funcCall.getInstance();
+        Type originalFuncType = instance.accept(this);
 
 
-            if (currFunc.getReturnType() instanceof VoidType && !fCallStmt) {
-                CantUseValueOfVoidFunction error = new CantUseValueOfVoidFunction(funcCall.getLine());
+        try {
+            FptrType funcPtrType = (FptrType) originalFuncType;
+
+            //check if arguments number matches between original definition and expression.
+            if (funcCall.getArgs().size() != funcPtrType.getArgsType().size()) {
+                ArgsInFunctionCallNotMatchDefinition error = new ArgsInFunctionCallNotMatchDefinition(funcCall.getLine());
                 funcCall.addError(error);
-                err = true;
-            }
+            } else {
+                ArrayList<Type> callArgTypes = new ArrayList<>();
+                for (Expression expression : funcCall.getArgs()) {
+                    Type t = expression.accept(this);
+                    callArgTypes.add(t);
+                }
 
-            //check if arguments match the original definition
-            else if(funcCall.getArgs().size() != currFunc.getArgTypes().size())
-                errorExists = true;
-            else {
-                if(fArgType.size() != 0) {
-                    int index = 0;
-                    for (Type ltype : currFunc.getArgTypes()) {
-                        if (!checkSpecialTypeEquality(ltype, fArgType.get(index))) {
-                            errorExists = true;
-                            break;
-                        }
-                        index++;
-
+                //check if each argument in function call matches its equivalent in original definition.
+                for (int i = 0; i < funcPtrType.getArgsType().size(); i++) {
+                    if (!checkSpecialTypeEquality(callArgTypes.get(i), funcPtrType.getArgsType().get(i))
+                            && (!(callArgTypes.get(i) instanceof NoType))
+                            && (!(funcPtrType.getArgsType().get(i) instanceof NoType))
+                    ) {
+                        ArgsInFunctionCallNotMatchDefinition error = new ArgsInFunctionCallNotMatchDefinition(funcCall.getLine());
+                        funcCall.addError(error);
+                        break;
                     }
                 }
             }
 
-            if (errorExists) {
-                ArgsInFunctionCallNotMatchDefinition error = new ArgsInFunctionCallNotMatchDefinition(funcCall.getLine());
+            //check if we're not using a function returning void in an invalid section
+            if (!fCallStmt) {
+                if (funcPtrType.getReturnType() instanceof VoidType) {
+                    CantUseValueOfVoidFunction error = new CantUseValueOfVoidFunction(funcCall.getLine());
+                    funcCall.addError(error);
+                }
+            }
+
+            return (funcPtrType.getReturnType() instanceof VoidType) ? new NoType() : funcPtrType.getReturnType();
+
+        } catch (Exception e) {
+            //invalid call on a non-function
+            if (!(originalFuncType instanceof NoType)) {
+                CallOnNoneFptrType error = new CallOnNoneFptrType(funcCall.getLine());
                 funcCall.addError(error);
             }
-            if (errorExists || err)
-                return new NoType();
-            else
-                return currFunc.getReturnType();
-        }
-        else
             return new NoType();
+        }
+
     }
+
 
     @Override
     public Type visit(Identifier identifier) {
-        String identifierName = identifier.getName();
-        //check the function matched with the identifier
+
         try {
-            FunctionSymbolTableItem fS = (FunctionSymbolTableItem) SymbolTable.root.getItem(FunctionSymbolTableItem.START_KEY + identifierName);
-            return new FptrType(fS.getArgTypes(), fS.getReturnType());
-        }
-        catch (ItemNotFoundException e) {
-            if (currentFunction != null) {
-                try {
-                    VariableSymbolTableItem vS = (VariableSymbolTableItem) currentFunction.getFunctionSymbolTable().getItem(VariableSymbolTableItem.START_KEY + identifierName);
-                    return vS.getType();
-                }
-                catch (ItemNotFoundException e1) {
-                    VarNotDeclared error = new VarNotDeclared(identifier.getLine(), identifierName);
-                    identifier.addError(error);
-                    return new NoType();
-                }
-            }
+            String idName = identifier.getName();
+            String fullIdName = FunctionSymbolTableItem.START_KEY + idName;
+            FunctionSymbolTableItem functionSymbolTableItem = (FunctionSymbolTableItem) SymbolTable.root.getItem(fullIdName);
+            return new FptrType(functionSymbolTableItem.getArgTypes(), functionSymbolTableItem.getReturnType());
 
-            //check if the identifier is a member of the struct
-            if (currentStruct != null){
-                try {
-                    VariableSymbolTableItem vS = (VariableSymbolTableItem) currentStruct.getStructSymbolTable().getItem(VariableSymbolTableItem.START_KEY + identifierName);
-                    return vS.getType();
-                } catch (ItemNotFoundException e1) {
-                    StructMemberNotFound exception = new StructMemberNotFound(identifier.getLine(), currentStruct.getName(), identifierName);
-                    identifier.addError(exception);
-                    return new NoType();
-                }
-            }
-
-            //check if the identifier matches with any defined struct
-            else {
-                try {
-                    VariableSymbolTableItem vS = (VariableSymbolTableItem) SymbolTable.top.getItem(VariableSymbolTableItem.START_KEY + identifierName);
-                    return vS.getType();
-                }
-                catch (ItemNotFoundException e1) {
-                    VarNotDeclared error = new VarNotDeclared(identifier.getLine(), identifierName);
-                    identifier.addError(error);
-                    return new NoType();
-                }
+        }catch (ItemNotFoundException e) {
+            try {
+                String idName = identifier.getName();
+                String fullIdName = VariableSymbolTableItem.START_KEY + idName;
+                VariableSymbolTableItem variableSymbolTableItem = (VariableSymbolTableItem) SymbolTable.top.getItem(fullIdName);
+                return variableSymbolTableItem.getType();
+            } catch (ItemNotFoundException e1) {
+                VarNotDeclared error = new VarNotDeclared(identifier.getLine(), identifier.getName());
+                identifier.addError(error);
+                return new NoType();
             }
         }
     }
@@ -341,7 +304,7 @@ public class ExpressionTypeChecker extends Visitor<Type> {
             structAccess.addError(error);
         }
 
-        if (stInstanceType instanceof StructType){
+        else if (stInstanceType instanceof StructType){
             String stName = StructSymbolTableItem.START_KEY + ((StructType) stInstanceType).getStructName().getName();
             String stVariableName = VariableSymbolTableItem.START_KEY + structAccess.getElement().getName();
 
@@ -381,14 +344,16 @@ public class ExpressionTypeChecker extends Visitor<Type> {
         Type argType = listAppend.getListArg().accept(this);
         Type elType = listAppend.getElementArg().accept(this);
 
+        if(argType instanceof NoType) return new VoidType();
+
         //check if argType is unhandled.
-        if (!(argType instanceof ListType || argType instanceof NoType)){
+        if (!(argType instanceof ListType)){
             AppendToNonList error = new AppendToNonList(listAppend.getLine());
             listAppend.addError(error);
             return new NoType();
         }
         //check if the given type for the argument matches with the original definition.
-        if (((ListType) argType).getType().equals(elType)){
+        if (!(checkSpecialTypeEquality(((ListType) argType).getType(), elType))){
             NewElementTypeNotMatchListType error = new NewElementTypeNotMatchListType(listAppend.getLine());
             listAppend.addError(error);
             return new NoType();
