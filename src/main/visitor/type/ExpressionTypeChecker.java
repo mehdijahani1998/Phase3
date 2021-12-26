@@ -29,7 +29,7 @@ public class ExpressionTypeChecker extends Visitor<Type> {
     private FunctionSymbolTableItem currentFunction;
     private StructSymbolTableItem currentStruct;
     private boolean fCallStmt;
-
+    
     public void setCurrentFunction(FunctionSymbolTableItem cf){
         this.currentFunction = cf;
     }
